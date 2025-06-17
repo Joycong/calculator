@@ -29,6 +29,8 @@ pipeline {
         stage('Run container') {
             steps {
                 sh 'docker run -d --rm --name calculator -p 8765:8080 leszko/calculator'
+                // 컨테이너가 뜰 때까지 대기
+                sh 'sleep 5'
             }
         }
 
