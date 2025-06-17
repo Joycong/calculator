@@ -1,90 +1,48 @@
 pipeline {
-     agent any
-     triggers {
-          pollSCM('* * * * *')
-     }
-     stages {
-          stage("Compile") {
-               steps {
-                    sh "./gradlew compileJava"
-               }
-          }
-          stage("Unit test") {
-               steps {
-                    sh "./gradlew test"
-               }
-          }
-          stage("Code coverage") {
-               steps {
-                    sh "./gradlew jacocoTestReport"
-                    sh "./gradlew jacocoTestCoverageVerification"
-               }
-          }
-          stage("Static code analysis") {
-               steps {
-                    sh "./gradlew checkstyleMain"
-               }
-          }
-          stage("Package") {
-               steps {
-                    sh "./gradlew build"
-               }
-          }
+    agent any
 
-          stage("Docker build") {
-               steps {
-                    sh "docker build -t leszko/calculator:${BUILD_TIMESTAMP} ."
-               }
-          }
+    stages {
+        stage('Clone') {
+            steps {
+                git 'https://github.com/leszko/calculator.git'
+            }
+        }
 
-          stage("Docker login") {
-               steps {
-                    withCredentials([[$class: 'UsernamePasswordMultiBinding', credentialsId: 'docker-hub-credentials',
-                               usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD']]) {
-                         sh "docker login --username $USERNAME --password $PASSWORD"
-                    }
-               }
-          }
+        stage('Compile') {
+            steps {
+                sh './gradlew compileJava'
+            }
+        }
 
-          stage("Docker push") {
-               steps {
-                    sh "docker push leszko/calculator:${BUILD_TIMESTAMP}"
-               }
-          }
+        stage('Unit test') {
+            steps {
+                sh './gradlew test'
+            }
+        }
 
-          stage("Update version") {
-               steps {
-                    sh "sed  -i 's/{{VERSION}}/${BUILD_TIMESTAMP}/g' calculator.yaml"
-               }
-          }
-          
-          stage("Deploy to staging") {
-               steps {
-                    sh "kubectl config use-context staging"
-                    sh "kubectl apply -f hazelcast.yaml"
-                    sh "kubectl apply -f calculator.yaml"
-               }
-          }
+        stage('Build Docker image') {
+            steps {
+                sh 'docker build -t leszko/calculator .'
+            }
+        }
 
-          stage("Acceptance test") {
-               steps {
-                    sleep 60
-                    sh "chmod +x acceptance-test.sh && ./acceptance-test.sh"
-               }
-          }
+        stage('Run container') {
+            steps {
+                sh 'docker run -d --rm --name calculator -p 8765:8080 leszko/calculator'
+            }
+        }
 
-          stage("Release") {
-               steps {
-                    sh "kubectl config use-context production"
-                    sh "kubectl apply -f hazelcast.yaml"
-                    sh "kubectl apply -f calculator.yaml"
-               }
-          }
-          stage("Smoke test") {
-              steps {
-                  sleep 60
-                  sh "chmod +x smoke-test.sh && ./smoke-test.sh"
-              }
-          }
-     }
+        stage('Acceptance Test') {
+            steps {
+                // 핵심: 테스트 URL 변경
+                sh './gradlew acceptanceTest -Dcalculator.url=http://host.docker.internal:8765'
+            }
+        }
+
+        stage('Stop container') {
+            steps {
+                sh 'docker stop calculator || true'
+            }
+        }
+    }
 }
