@@ -4,7 +4,7 @@ pipeline {
     stages {
         stage('Clone') {
             steps {
-                git 'https://github.com/leszko/calculator.git'
+                git 'https://github.com/Joycong/calculator.git'
             }
         }
 
@@ -22,28 +22,32 @@ pipeline {
 
         stage('Build Docker image') {
             steps {
-                sh 'docker build -t leszko/calculator .'
+                sh 'docker build -t calculator .'
             }
         }
 
         stage('Run container') {
             steps {
-                sh 'docker run -d --rm --name calculator -p 8765:8080 leszko/calculator'
-                // 컨테이너가 뜰 때까지 대기
+                // 네트워크 생성 (이미 존재해도 무시)
+                sh 'docker network create jenkins-net || true'
+                // calculator 컨테이너를 같은 네트워크에서 실행
+                sh 'docker run -d --rm --name calculator --network jenkins-net calculator'
+                // 실행 대기
                 sh 'sleep 5'
             }
         }
 
         stage('Acceptance Test') {
             steps {
-                // 핵심: 테스트 URL 변경
-                sh './gradlew acceptanceTest -Dcalculator.url=http://host.docker.internal:8765'
+                // 도메인 이름으로 접근
+                sh './gradlew acceptanceTest -Dcalculator.url=http://calculator:8080'
             }
         }
 
         stage('Stop container') {
             steps {
-                sh 'docker stop calculator || true'
+                // --rm으로 실행했기 때문에 생략 가능
+                sh 'echo "Container was set to auto-remove."'
             }
         }
     }
